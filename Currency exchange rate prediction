@@ -1,0 +1,91 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+import yfinance as yf
+from datetime import datetime, timedelta
+
+# Define the currency pair and fetch the data
+currency_pair = 'INRUSD=X' # Make sure this ticker is valid for your needs
+data = yf.download(currency_pair, start='1994-01-01', end='2024-10-01')
+
+data['Date'] = data.index
+data['DayOfYear'] = data.index.dayofyear
+data['Year'] = data.index.year
+
+# Display the first few rows of the data
+df = pd.DataFrame(data)
+print(df.head())
+print(df.tail(5))
+print(df.isnull().sum())
+print(df.info())
+print("DUPLICATES", df.duplicated().sum())
+print(df.shape)
+df.index.name = 'Date'
+
+# Plot the closing price
+plt.figure(figsize=(10, 8))
+plt.title("INR - USD Exchange Rate")
+plt.xlabel("Date")
+plt.ylabel("Close")
+plt.plot(data["Close"])
+plt.show()
+
+# Correlation heatmap
+correlation_matrix = data.corr()
+print(correlation_matrix)
+
+plt.figure(figsize=(12, 10))  # Adjust the figure size as needed
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+plt.title('Correlation Heatmap of Currency Data')
+plt.show()
+
+# Prepare data for model training
+x = data[["Open", "High", "Low","DayOfYear", "Year"]]
+y = data["Close"]
+x = x.to_numpy()
+y = y.to_numpy()
+y = y.reshape(-1, 1)
+xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=0.2, random_state=42)
+model = LinearRegression().fit(xtrain, ytrain)
+y_pred = model.predict(xtest)
+
+# Function to get actual and predicted exchange rate for a specific date
+def get_rate_for_date(input_date):
+    try:
+        input_date = pd.to_datetime(input_date)
+        
+        if input_date not in data.index:
+            # For future dates
+            future_days = (input_date - data.index[-1]).days
+            if future_days <= 0:
+                return f"Date {input_date} is not in the future relative to the dataset."
+            
+            # Predicting future values
+            last_record = data.iloc[-1]
+            x_future = np.array([
+                last_record['Open'], 
+                last_record['High'], 
+                last_record['Low'], 
+                input_date.dayofyear, 
+                input_date.year
+            ]).reshape(1, -1)
+            
+            predicted_rate = model.predict(x_future)[0][0]
+            return f"Date: {input_date.date()}, Predicted Rate: {predicted_rate}"
+        
+        else:
+            # For past dates
+            actual_rate = data.loc[input_date, "Close"]
+            x_date = data.loc[input_date, ["Open", "High", "Low", "DayOfYear", "Year"]].values.reshape(1, -1)
+            predicted_rate = model.predict(x_date)[0][0]
+            return f"Date: {input_date.date()}, Actual Rate: {actual_rate}, Predicted Rate: {predicted_rate}"
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# Example usage
+input_date = input("Enter a date to search for past or future days (YYYY-MM-DD): ")
+print(get_rate_for_date(input_date))
